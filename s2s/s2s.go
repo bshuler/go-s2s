@@ -1,6 +1,5 @@
+// Package s2s is a client implementation of the Splunk to Splunk protocol in Golang
 package s2s
-
-// Implementation of a Splunk to Splunk protocol client in Golang
 
 import (
 	"bufio"
