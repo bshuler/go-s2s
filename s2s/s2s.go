@@ -1,5 +1,7 @@
 package s2s
 
+// Implementation of a Splunk to Splunk protocol client in Golang
+
 import (
 	"bufio"
 	"bytes"
