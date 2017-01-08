@@ -230,27 +230,27 @@ func EncodeEvent(line map[string]string) (buf *bytes.Buffer) {
 
 // Send sends an event to Splunk, represented as a map[string]string containing keys of index, host, source, sourcetype, and _raw.
 // It is a convenience function, wrapping EncodeEvent and Copy
-func (st *S2S) Send(event map[string]string) error {
+func (st *S2S) Send(event map[string]string) (int64, error) {
 	return st.Copy(EncodeEvent(event))
 }
 
 // Copy takes a io.Reader and copies it to Splunk, needs to be encoded by EncodeEvent
-func (st *S2S) Copy(r io.Reader) error {
+func (st *S2S) Copy(r io.Reader) (int64, error) {
 	bytes, err := io.Copy(st.buf, r)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	st.sent += bytes
 	if st.sent > int64(st.bufferBytes) {
 		err := st.buf.Flush()
 		if err != nil {
-			return err
+			return 0, err
 		}
 		st.newBuf()
 		st.sent = 0
 	}
-	return nil
+	return bytes, nil
 }
 
 // Close disconnects from Splunk

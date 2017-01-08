@@ -27,7 +27,7 @@ func TestS2SNoTLS(t *testing.T) {
 			"sourcetype": "s2s-testst",
 			"_raw":       "testing",
 		}
-		err = s.Send(event)
+		_, err = s.Send(event)
 		assert.NoError(t, err)
 	}
 }
@@ -43,7 +43,7 @@ func TestS2STLSNoCert(t *testing.T) {
 			"sourcetype": "s2s-testst-tlsnocert",
 			"_raw":       "testing!!",
 		}
-		err = s.Send(event)
+		_, err = s.Send(event)
 		assert.NoError(t, err)
 	}
 }
@@ -61,7 +61,7 @@ func TestS2STLSCert(t *testing.T) {
 			"sourcetype": "s2s-testst-tlscert",
 			"_raw":       "testing!!!",
 		}
-		err = s.Send(event)
+		_, err = s.Send(event)
 		assert.NoError(t, err)
 	}
 }
