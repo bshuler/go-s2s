@@ -38,20 +38,32 @@ type splunkSignature struct {
 	mgmtPort   [16]byte
 }
 
-// NewS2S will initialize S2S
-// endpoints is a list of endpoint strings, which should be in the format of host:port
-// bufferBytes is the max size of the buffer before flushing
+/*
+NewS2S will initialize S2S
+
+endpoints is a list of endpoint strings, which should be in the format of host:port
+
+bufferBytes is the max size of the buffer before flushing
+*/
 func NewS2S(endpoints []string, bufferBytes int) (*S2S, error) {
 	return NewS2STLS(endpoints, bufferBytes, false, "", "", false)
 }
 
-// NewS2STLS will initialize S2S for TLS
-// endpoints is a list of endpoint strings, which should be in the format of host:port
-// bufferBytes is the max size of the buffer before flushing
-// tls specifies whether to connect with TLS or not
-// cert is a valid root CA we should use for verifying the server cert
-// serverName is the name specified in your certificate, will default to "SplunkServerDefaultCert",
-// insecureSkipVerify specifies whether to skip verification of the server certificate
+/*
+NewS2STLS will initialize S2S for TLS
+
+endpoints is a list of endpoint strings, which should be in the format of host:port
+
+bufferBytes is the max size of the buffer before flushing
+
+tls specifies whether to connect with TLS or not
+
+cert is a valid root CA we should use for verifying the server cert
+
+serverName is the name specified in your certificate, will default to "SplunkServerDefaultCert",
+
+insecureSkipVerify specifies whether to skip verification of the server certificate
+*/
 func NewS2STLS(endpoints []string, bufferBytes int, tls bool, cert string, serverName string, insecureSkipVerify bool) (*S2S, error) {
 	st := new(S2S)
 
@@ -216,7 +228,7 @@ func EncodeEvent(line map[string]string) (buf *bytes.Buffer) {
 	return buf
 }
 
-// Send sends an event to Splunk, represented as a map[string]string containing keys of index, host, source, sourcetype, and _raw
+// Send sends an event to Splunk, represented as a map[string]string containing keys of index, host, source, sourcetype, and _raw.
 // It is a convenience function, wrapping EncodeEvent and Copy
 func (st *S2S) Send(event map[string]string) error {
 	return st.Copy(EncodeEvent(event))
