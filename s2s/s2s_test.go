@@ -1,4 +1,4 @@
-package outputter
+package s2s
 
 import (
 	"testing"

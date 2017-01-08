@@ -3,27 +3,32 @@ package s2s
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"math/rand"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"encoding/binary"
 )
 
+// S2S sends data to Splunk using the Splunk to Splunk protocol
 type S2S struct {
-	buf         *bufio.Writer
-	conn        net.Conn
-	initialized bool
-	endpoint    string
-	endpoints   []string
-	closed      bool
-	lastS       *config.Sample
-	sent        int64
-	bufferBytes int
+	buf                *bufio.Writer
+	conn               net.Conn
+	initialized        bool
+	endpoint           string
+	endpoints          []string
+	closed             bool
+	sent               int64
+	bufferBytes        int
+	tls                bool
+	cert               string
+	serverName         string
+	insecureSkipVerify bool
 }
 
 type splunkSignature struct {
@@ -32,13 +37,68 @@ type splunkSignature struct {
 	mgmtPort   [16]byte
 }
 
+// NewS2S will initialize S2S
+// endpoints is a list of endpoint strings, which should be in the format of host:port
+// bufferBytes is the max size of the buffer before flushing
+func NewS2S(endpoints []string, bufferBytes int) (*S2S, error) {
+	return NewS2STLS(endpoints, bufferBytes, false, "", "", false)
+}
+
+// NewS2STLS will initialize S2S for TLS
+// endpoints is a list of endpoint strings, which should be in the format of host:port
+// bufferBytes is the max size of the buffer before flushing
+// tls specifies whether to connect with TLS or not
+// cert is a valid root CA we should use for verifying the server cert
+// serverName is the name specified in your certificate, will default to "SplunkServerDefaultCert",
+// insecureSkipVerify specifies whether to skip verification of the server certificate
+func NewS2STLS(endpoints []string, bufferBytes int, tls bool, cert string, serverName string, insecureSkipVerify bool) (*S2S, error) {
+	st := new(S2S)
+
+	st.endpoints = endpoints
+	st.bufferBytes = bufferBytes
+	st.tls = tls
+	st.cert = cert
+	if serverName == "" {
+		st.serverName = "SplunkServerDefaultCert"
+	} else {
+		st.serverName = serverName
+	}
+	st.insecureSkipVerify = insecureSkipVerify
+
+	err := st.newBuf()
+	if err != nil {
+		return nil, err
+	}
+	err = st.sendSig()
+	if err != nil {
+		return nil, err
+	}
+	st.initialized = true
+	return st, nil
+}
+
 // Connect opens a connection to Splunk
 // endpoint is the format of 'host:port'
-// bufferBytes defines the size of the buffer before flushing
-func (st *S2S) connect(endpoint string, bufferBytes int) error {
+func (st *S2S) connect(endpoint string) error {
 	var err error
+	if st.tls {
+		config := &tls.Config{
+			InsecureSkipVerify: st.insecureSkipVerify,
+			ServerName:         st.serverName,
+		}
+		if len(st.cert) > 0 {
+			roots := x509.NewCertPool()
+			ok := roots.AppendCertsFromPEM([]byte(st.cert))
+			if !ok {
+				return fmt.Errorf("Failed to parse root certificate")
+			}
+			config.RootCAs = roots
+		}
+
+		st.conn, err = tls.Dial("tcp", endpoint, config)
+		return err
+	}
 	st.conn, err = net.DialTimeout("tcp", endpoint, 2*time.Second)
-	st.bufferBytes = bufferBytes
 	return err
 }
 
@@ -98,11 +158,11 @@ func encodeKeyValue(key, value string) []byte {
 }
 
 // EncodeEvent encodes a full Splunk event
-func EncodeEvent(line map[string]string) []byte {
+func EncodeEvent(line map[string]string) (buf *bytes.Buffer) {
 	// buf := bp.Get().(*bytes.Buffer)
 	// defer bp.Put(buf)
 	// buf.Reset()
-	buf := &bytes.Buffer{}
+	buf = &bytes.Buffer{}
 
 	var msgSize uint32
 	msgSize = 8 // Two unsigned 32 bit integers included, the number of maps and a 0 between the end of raw the _raw trailer
@@ -152,28 +212,17 @@ func EncodeEvent(line map[string]string) []byte {
 	binary.Write(buf, binary.BigEndian, uint32(0))
 	binary.Write(buf, binary.BigEndian, encodedRawTrailer)
 
-	return buf.Bytes()
+	return buf
 }
 
 // Send sends an event to Splunk, represented as a map[string]string containing keys of index, host, source, sourcetype, and _raw
 // It is a convenience function, wrapping EncodeEvent and Copy
 func (st *S2S) Send(event map[string]string) error {
-	return Copy(EncodeEvent(event))
+	return st.Copy(EncodeEvent(event))
 }
 
 // Copy takes a io.Reader and copies it to Splunk, needs to be encoded by EncodeEvent
 func (st *S2S) Copy(r io.Reader) error {
-	if st.initialized == false {
-		err := st.newBuf(item)
-		if err != nil {
-			return err
-		}
-		err = st.sendSig()
-		if err != nil {
-			return err
-		}
-		st.initialized = true
-	}
 	bytes, err := io.Copy(st.buf, r)
 	if err != nil {
 		return err
@@ -185,9 +234,10 @@ func (st *S2S) Copy(r io.Reader) error {
 		if err != nil {
 			return err
 		}
-		st.newBuf(item)
+		st.newBuf()
 		st.sent = 0
 	}
+	return nil
 }
 
 // Close disconnects from Splunk
@@ -206,9 +256,9 @@ func (st *S2S) Close() error {
 	return nil
 }
 
-func (st *S2S) newBuf(item *config.OutQueueItem) error {
+func (st *S2S) newBuf() error {
 	st.endpoint = st.endpoints[rand.Intn(len(st.endpoints))]
-	err := st.Connect(st.endpoint)
+	err := st.connect(st.endpoint)
 	if err != nil {
 		return err
 	}
